@@ -1,0 +1,57 @@
+services:
+
+  # ─── Browser client (KasmVNC) ────────────────────────────────────────────────
+  openttd:
+    image: ghcr.io/rogerrum/docker-openttd:latest
+    container_name: openttd
+    restart: unless-stopped
+    environment:
+      - CUSTOM_USER=cal
+      - PASSWORD=YOUR_PASSWORD_HERE
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+    volumes:
+      - ./config:/config:rw
+    networks:
+      - trading-v2-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openttd.rule=Host(`openttd.playground.montytorr.tech`)"
+      - "traefik.http.routers.openttd.entrypoints=websecure"
+      - "traefik.http.routers.openttd.tls.certresolver=letsencrypt"
+      - "traefik.http.services.openttd.loadbalancer.server.port=3000"
+
+  # ─── Dedicated multiplayer server ────────────────────────────────────────────
+  openttd-server:
+    image: ghcr.io/ropenttd/openttd:latest
+    container_name: openttd-server
+    restart: unless-stopped
+    environment:
+      - loadgame=false
+    volumes:
+      - ./server-config:/config:rw
+    ports:
+      - "3979:3979/tcp"
+      - "3979:3979/udp"
+    networks:
+      - trading-v2-network
+
+  # ─── WebSocket → TCP proxy (lets browser client join the server) ──────────────
+  websockify:
+    image: jwnmulder/websockify:latest
+    container_name: openttd-websockify
+    restart: unless-stopped
+    command: ["0.0.0.0:8080", "openttd-server:3979"]
+    networks:
+      - trading-v2-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openttd-ws.rule=Host(`openttd.playground.montytorr.tech`) && PathPrefix(`/ws`)"
+      - "traefik.http.routers.openttd-ws.entrypoints=websecure"
+      - "traefik.http.routers.openttd-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.services.openttd-ws.loadbalancer.server.port=8080"
+
+networks:
+  trading-v2-network:
+    external: true
